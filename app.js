@@ -81,10 +81,10 @@
 
   // ===== דגמים נבחרים =====
   // כל דגם מוגדר לפי כללים (ולא לפי קוד דגם קבוע), כך שהרשימה ממשיכה לעבוד גם אחרי עדכון השנתון:
-  // tc – קודי תוצר, k – כינוי מסחרי, t – רמת גימור, dn – תיאור דגם, pr – סוג הנעה. נלקחת השנה העדכנית ביותר,
+  // tc – קודי תוצר, k – כינוי מסחרי, t – רמת גימור, dn – תיאור דגם, pr – סוג הנעה, imp – יבואן. נלקחת השנה העדכנית ביותר,
   // ועדיפות ליבואן הרשמי. כשיש כמה קודי דגם מתאימים – מוצג טווח.
   const FEATURED = [
-    { l: 'טויוטה סיינה', tc: [488], k: 'SIENNA', any: true, note: 'אין יבואן רשמי – טווח מחירי היבואנים המקבילים' },
+    { l: 'טויוטה סיינה', tc: [488], k: 'SIENNA', imp: 'טרגט', any: true, note: 'יבואן: טרגט מוטורס – טווח לכל רמות הגימור' },
     { l: 'טויוטה סיטי 5 מקומות', tc: [1242], k: 'CITY', t: '^CITY 5$' },
     { l: 'סיטרואן ברלינגו 5 מקומות', k: '^BERLINGO$', t: 'SHINE', dn: 'EDYHZ' },
     { l: 'טויוטה סיטי 7 מקומות', tc: [1242], k: 'CITY', t: '^CITY 7$' },
@@ -125,9 +125,9 @@
 
   function featuredRecs(f) {
     const re = s => s ? new RegExp(s, 'i') : null;
-    const k = re(f.k), t = re(f.t), dn = re(f.dn);
+    const k = re(f.k), t = re(f.t), dn = re(f.dn), imp = re(f.imp);
     let m = idx.recs.filter(r => (!f.tc || f.tc.includes(r.tc)) && (!k || k.test(r.k)) && (!t || t.test(r.t))
-      && (!dn || dn.test(r.dn)) && (!f.pr || r.pr === f.pr));
+      && (!dn || dn.test(r.dn)) && (!f.pr || r.pr === f.pr) && (!imp || imp.test(r.imp)));
     if (!m.length) return [];
     const y = Math.max(...m.map(r => r.y));                 // השנה העדכנית ביותר = רכב חדש
     m = m.filter(r => r.y === y);
