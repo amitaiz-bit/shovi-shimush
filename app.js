@@ -1,0 +1,176 @@
+(function () {
+  'use strict';
+  const S = window.ShoviSearch;
+  const API = 'https://data.gov.il/api/3/action/datastore_search';
+  const REG = ['053cea08-09bc-40ec-8f7a-156f0677aff3', 'f6efe89a-fb3d-43a4-bb61-9bf12a9b9099']; // פעיל, לא פעיל עם קוד דגם
+  const PRICES = '39f455bf-6db0-4926-859d-017f34eacbcb';
+  const PAGE = 40;
+
+  const $ = id => document.getElementById(id);
+  const q = $('q'), out = $('out'), status = $('status');
+  const fmt = n => n == null ? '—' : '₪' + Math.round(n).toLocaleString('he-IL');
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  let idx = null, data = null, pending = null;
+
+  // ===== טעינת נתונים =====
+  fetch('data/cars.json', { cache: 'no-cache' })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(d => {
+      data = d;
+      idx = S.createIndex(d);
+      const built = d.built ? new Date(d.built).toLocaleDateString('he-IL') : '';
+      status.textContent = `${idx.recs.length.toLocaleString('he-IL')} דגמים במחירון` + (built ? ` · עודכן ${built}` : '');
+      footer(built);
+      const fromUrl = new URLSearchParams(location.search).get('q');
+      if (fromUrl) { q.value = fromUrl; run(); }
+      else if (pending) run();
+    })
+    .catch(e => { status.textContent = 'שגיאה בטעינת המחירון (' + e.message + '). חיפוש לפי מספר רכב עדיין זמין.'; footer(''); });
+
+  function footer(built) {
+    const T = S.TAX;
+    $('foot').innerHTML = `
+      <p><b>אופן החישוב (שנת מס ${T.year}):</b> ${(T.rate * 100).toFixed(2)}% ממחיר המחירון של הרכב כחדש בשנת העלייה לכביש,
+      מעוגל ל-10 ₪, עד תקרת מחירון של ${fmt(T.cap)}. בניכוי הפחתה חודשית: היברידי ${fmt(T.reduction.h)},
+      פלאג-אין ${fmt(T.reduction.p)}, חשמלי ${fmt(T.reduction.e)}.</p>
+      <p>מקור הנתונים: מחירון יבואן, מאגר דגמי WLTP ומאגר כלי הרכב של משרד התחבורה ב-data.gov.il${built ? ' (עדכון אחרון ' + built + ')' : ''}.
+      סוג ההנעה מזוהה אוטומטית ואפשר לשנות אותו בכל תוצאה.</p>
+      <p>התוצאה להמחשה בלבד. החישוב המחייב – ב<a href="https://www.misim.gov.il/mm_usecar10/UseCarScreen.aspx" target="_blank" rel="noopener">סימולטור רשות המסים</a>.</p>`;
+  }
+
+  // ===== חיפוש =====
+  let timer;
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 220); });
+  $('f').addEventListener('submit', e => { e.preventDefault(); clearTimeout(timer); run(); q.blur(); });
+  $('chips').addEventListener('click', e => { if (e.target.classList.contains('chip')) { q.value = e.target.textContent; run(); } });
+
+  function run() {
+    const text = q.value.trim();
+    history.replaceState(null, '', text ? '?q=' + encodeURIComponent(text) : location.pathname);
+    if (!text) { out.innerHTML = ''; return; }
+    const digits = text.replace(/[\s-]/g, '');
+    if (/^\d{7,8}$/.test(digits)) return plate(digits);
+    if (!idx) { pending = text; out.innerHTML = '<div class="note">המחירון עדיין נטען…</div>'; return; }
+    render(S.search(idx, text));
+  }
+
+  function render(r) {
+    let h = '';
+    if (!r.tokens.length) {
+      out.innerHTML = '<div class="note">הוסיפו יצרן או דגם (שנה לבדה לא מספיקה).</div>'; return;
+    }
+    if (r.unmatched.length) h += `<div class="note warn">לא נמצאה התאמה למילים: <b>${esc(r.unmatched.join(', '))}</b> – נסו כתיב אחר או באנגלית.</div>`;
+    if (r.yearRelaxed) h += `<div class="note warn">לא נמצאו דגמים משנת ${r.year} – מוצגות שנים סמוכות.</div>`;
+    if (!r.exact.length) { out.innerHTML = h + '<div class="note">לא נמצאו תוצאות.</div>'; return; }
+
+    const many = r.exact.length > 1;
+    h += `<div class="sec">${many ? r.exact.length + ' דגמים תואמים' : 'דגם תואם'}
+      ${many && r.tokens.length < 3 ? '<small>· הוסיפו רמת גימור, נפח מנוע או סוג הנעה כדי לצמצם</small>' : ''}</div>`;
+    h += `<div id="list"></div>`;
+    if (r.near.length) h += `<div class="sec">דגמים קרובים <small>· התאמה חלקית</small></div><div id="near"></div>`;
+    out.innerHTML = h;
+    paginate($('list'), r.exact);
+    if (r.near.length) paginate($('near'), r.near);
+  }
+
+  function paginate(el, list) {
+    let shown = 0;
+    const more = document.createElement('button');
+    more.className = 'more';
+    const step = () => {
+      const frag = document.createDocumentFragment();
+      list.slice(shown, shown + PAGE).forEach(rec => frag.appendChild(card(rec)));
+      shown += PAGE;
+      el.insertBefore(frag, more.parentNode ? more : null);
+      if (shown >= list.length) more.remove(); else more.textContent = `הצג עוד (${list.length - shown})`;
+    };
+    more.onclick = step;
+    el.appendChild(more);
+    step();
+  }
+
+  function card(rec, extra) {
+    const d = document.createElement('div');
+    d.className = 'card';
+    const engine = rec.cc ? (rec.cc / 1000).toFixed(1) + ' ל׳' : '';
+    const opts = Object.entries(S.PROP_LABEL).map(([k, v]) => `<option value="${k}"${k === rec.pr ? ' selected' : ''}>${v}</option>`).join('');
+    d.innerHTML = `
+      <div class="title">${esc(rec.m)} ${esc(rec.k || rec.dn)} ${rec.t ? `<span class="trim">${esc(rec.t)}</span>` : ''}</div>
+      <div class="meta">
+        <span>שנת ${rec.y}</span>
+        <span>קוד דגם ${rec.dc}</span>
+        ${rec.dn && rec.k ? `<span>${esc(rec.dn)}</span>` : ''}
+        ${engine ? `<span>${engine}</span>` : ''}
+        ${rec.hp ? `<span>${rec.hp} כ״ס</span>` : ''}
+        ${rec.b ? `<span>${esc(rec.b)}</span>` : ''}
+        <span><select class="prop" aria-label="סוג הנעה">${opts}</select></span>
+        ${extra || ''}
+      </div>
+      <div class="val">
+        <div class="lbl">שווי שימוש חודשי</div>
+        <div class="num"></div>
+        <div class="price">מחירון ${fmt(rec.p)}${rec.p > S.TAX.cap ? ' (מעל התקרה)' : ''}</div>
+      </div>`;
+    const numEl = d.querySelector('.num'), sel = d.querySelector('select');
+    const upd = () => { numEl.textContent = fmt(S.usageValue(rec.p, sel.value)); };
+    sel.onchange = upd; upd();
+    return d;
+  }
+
+  // ===== חיפוש לפי מספר רכב (בזמן אמת מול data.gov.il) =====
+  async function plate(num) {
+    out.innerHTML = `<div class="status"><span class="spinner"></span>מחפש רכב <span class="plate">${num}</span>…</div>`;
+    try {
+      let car = null;
+      for (const res of REG) {
+        const r = await api(res, { filters: JSON.stringify({ mispar_rechev: +num }), limit: 1 });
+        if (r.records.length) { car = r.records[0]; break; }
+      }
+      if (!car) { out.innerHTML = `<div class="note warn">לא נמצא רכב מספר ${num} במאגרי משרד התחבורה.</div>`; return; }
+
+      const tc = +car.tozeret_cd, dc = +car.degem_cd, yProd = +car.shnat_yitzur;
+      const yReg = parseInt(String(car.moed_aliya_lakvish || '').split('-')[0], 10) || yProd;
+      let rows = idx ? idx.recs.filter(r => r.tc === tc && r.dc === dc) : [];
+      if (!rows.length) rows = await livePrices(tc, dc, car);
+      const pick = rows.find(r => r.y === yReg) || rows.find(r => r.y === yProd);
+      const fuelProp = /חשמל\s*\/|\/\s*חשמל/.test(car.sug_delek_nm || '') ? 'h' : /^חשמל$/.test((car.sug_delek_nm || '').trim()) ? 'e' : null;
+
+      let h = `<div class="sec"><span class="plate">${num}</span> · ${esc(car.tozeret_nm)} ${esc(car.kinuy_mishari || car.degem_nm)}
+        ${car.ramat_gimur ? `<span style="color:var(--accent)">${esc(car.ramat_gimur)}</span>` : ''}</div>
+        <div class="note">שנת ייצור ${yProd || '—'} · עלה לכביש ${esc(car.moed_aliya_lakvish || '—')} · קוד תוצר ${tc} · קוד דגם ${dc} · ${esc(car.sug_delek_nm || '')}</div>`;
+      if (yReg < 2010) h += `<div class="note warn">הרכב נרשם לפני 2010 – שווי השימוש נקבע לפי טבלאות קבוצות מחיר ולא לפי מחירון.</div>`;
+      out.innerHTML = h + '<div id="list"></div>';
+      const list = $('list');
+      if (!rows.length) { list.innerHTML = '<div class="note warn">לא נמצא מחיר מחירון לקוד הדגם הזה. בדקו בסימולטור של רשות המסים.</div>'; return; }
+      const ordered = pick ? [pick, ...rows.filter(r => r !== pick)] : rows.sort((a, b) => Math.abs(a.y - yReg) - Math.abs(b.y - yReg));
+      ordered.forEach((r, i) => {
+        const rec = Object.assign({}, r, { t: r.t || car.ramat_gimur || '' });
+        if (fuelProp && rec.pr === 'r') rec.pr = fuelProp;
+        const tag = i === 0 && pick ? `<span style="color:var(--good);font-weight:700">✓ מחירון שנת ${pick.y === yReg ? 'העלייה לכביש' : 'הייצור'}</span>` : '';
+        list.appendChild(card(rec, tag));
+      });
+    } catch (e) {
+      out.innerHTML = `<div class="note warn">שגיאה בפנייה למאגר משרד התחבורה (${esc(e.message)}). נסו שוב בעוד רגע.</div>`;
+    }
+  }
+
+  async function livePrices(tc, dc, car) {
+    const r = await api(PRICES, { filters: JSON.stringify({ tozeret_cd: tc, degem_cd: dc }), limit: 50 });
+    return r.records.filter(x => +x.mehir > 0).map(x => ({
+      m: x.tozeret_nm || car.tozeret_nm, tc, dc, dn: x.degem_nm || '', k: x.kinuy_mishari || car.kinuy_mishari || '',
+      y: +x.shnat_yitzur, p: +x.mehir, t: car.ramat_gimur || '', cc: 0, hp: 0, pr: 'r', b: '', imp: x.shem_yevuan || ''
+    }));
+  }
+
+  async function api(resource, params) {
+    const u = new URL(API);
+    u.searchParams.set('resource_id', resource);
+    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+    const res = await fetch(u);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    if (!j.success) throw new Error('API');
+    return j.result;
+  }
+})();

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מחשבון שווי שימוש ברכב</title>
+<meta name="description" content="חישוב שווי שימוש ברכב צמוד לפי מספר רכב, קוד דגם או חיפוש חופשי (יצרן, דגם, שנה, רמת גימור)">
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --ink: #1c2230; --muted: #667085; --line: #e4e7ec;
+    --accent: #1f5eff; --accent-soft: #e8efff; --good: #0f7b4a; --warn: #9a6700;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11141a; --card: #1a1f28; --ink: #e8ebf0; --muted: #98a2b3; --line: #2a313d;
+      --accent: #6d95ff; --accent-soft: #1e2a45; --good: #4cc38a; --warn: #e3b341; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--ink); line-height: 1.45; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 18px 14px 60px; }
+  h1 { font-size: 1.45rem; margin: 6px 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: .95rem; }
+  .search { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 8px 0 10px; }
+  .box { display: flex; gap: 8px; }
+  input[type=search] { flex: 1; font-size: 1.1rem; padding: 13px 14px; border-radius: 12px; border: 1.5px solid var(--line);
+    background: var(--card); color: var(--ink); outline: none; }
+  input[type=search]:focus { border-color: var(--accent); }
+  button { font: inherit; cursor: pointer; }
+  .go { border: 0; border-radius: 12px; padding: 0 18px; background: var(--accent); color: #fff; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px; padding: 4px 10px; font-size: .85rem; }
+  .status { color: var(--muted); font-size: .9rem; margin: 6px 2px 10px; min-height: 1.2em; }
+  .note { background: var(--accent-soft); border-radius: 10px; padding: 8px 12px; margin: 0 0 10px; font-size: .9rem; }
+  .note.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); }
+  .sec { font-weight: 700; margin: 18px 2px 8px; font-size: 1rem; }
+  .sec small { color: var(--muted); font-weight: 400; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px;
+    display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; align-items: center; }
+  .title { font-weight: 700; font-size: 1.02rem; }
+  .title .trim { color: var(--accent); font-weight: 600; }
+  .meta { color: var(--muted); font-size: .86rem; display: flex; flex-wrap: wrap; gap: 4px 12px; grid-column: 1; }
+  .val { grid-row: 1 / span 2; grid-column: 2; text-align: left; }
+  .val .num { font-size: 1.35rem; font-weight: 800; color: var(--good); white-space: nowrap; }
+  .val .lbl { font-size: .75rem; color: var(--muted); }
+  .val .price { font-size: .82rem; color: var(--muted); white-space: nowrap; }
+  select.prop { font: inherit; font-size: .8rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); padding: 1px 4px; }
+  .more { width: 100%; border: 1px dashed var(--line); background: transparent; color: var(--accent); border-radius: 12px; padding: 10px; }
+  .plate { border: 2px solid #f2c200; background: #ffd400; color: #111; font-weight: 800; border-radius: 6px; padding: 0 8px; letter-spacing: 1px; }
+  footer { color: var(--muted); font-size: .8rem; margin-top: 28px; border-top: 1px solid var(--line); padding-top: 12px; }
+  footer a { color: var(--accent); }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%; animation: s 0.8s linear infinite; vertical-align: -2px; margin-left: 6px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  @media (max-width: 520px) {
+    .card { grid-template-columns: 1fr; }
+    .val { grid-row: auto; grid-column: 1; text-align: right; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>מחשבון שווי שימוש ברכב</h1>
+  <p class="sub">חפשו לפי מספר רכב, קוד דגם או טקסט חופשי – יצרן, דגם, שנה ורמת גימור. ככל שהחיפוש מדויק יותר, התוצאות קרובות יותר.</p>
+
+  <div class="search">
+    <form class="box" id="f" autocomplete="off">
+      <input type="search" id="q" placeholder="למשל: טויוטה קורולה 2017 סאן" aria-label="חיפוש" enterkeyhint="search">
+      <button class="go" type="submit">חיפוש</button>
+    </form>
+    <div class="chips" id="chips">
+      <button class="chip" type="button">טויוטה קורולה 2017</button>
+      <button class="chip" type="button">קורולה 2017 היברידי</button>
+      <button class="chip" type="button">סקודה אוקטביה 2020 סטיישן</button>
+      <button class="chip" type="button">kia niro 2022</button>
+      <button class="chip" type="button">מאזדה 3 2018</button>
+    </div>
+  </div>
+
+  <div class="status" id="status"><span class="spinner"></span>טוען מחירון…</div>
+  <div id="out"></div>
+
+  <footer id="foot"></footer>
+</div>
+<script src="search.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
