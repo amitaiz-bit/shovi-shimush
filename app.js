@@ -37,7 +37,7 @@
     $('bracket').addEventListener('change', e => {
       bracket = +e.target.value;
       try { localStorage.setItem('shovi-bracket', String(bracket)); } catch (err) { /* בלי אחסון */ }
-      if (q.value.trim()) run();
+      run();
     });
   })();
 
@@ -53,6 +53,7 @@
       const fromUrl = new URLSearchParams(location.search).get('q');
       if (fromUrl) { q.value = fromUrl; run(); }
       else if (pending) run();
+      else renderFeatured();
     })
     .catch(e => { status.textContent = 'שגיאה בטעינת המחירון (' + e.message + '). חיפוש לפי מספר רכב עדיין זמין.'; footer(''); });
 
@@ -78,6 +79,106 @@
       <p>התוצאה להמחשה בלבד. החישוב המחייב – ב<a href="https://www.misim.gov.il/mm_usecar10/UseCarScreen.aspx" target="_blank" rel="noopener">סימולטור רשות המסים</a>.</p>`;
   }
 
+  // ===== דגמים נבחרים =====
+  // כל דגם מוגדר לפי כללים (ולא לפי קוד דגם קבוע), כך שהרשימה ממשיכה לעבוד גם אחרי עדכון השנתון:
+  // tc – קודי תוצר, k – כינוי מסחרי, t – רמת גימור, dn – תיאור דגם, pr – סוג הנעה. נלקחת השנה העדכנית ביותר,
+  // ועדיפות ליבואן הרשמי. כשיש כמה קודי דגם מתאימים – מוצג טווח.
+  const FEATURED = [
+    { l: 'טויוטה סיינה', tc: [488], k: 'SIENNA', any: true, note: 'אין יבואן רשמי – טווח מחירי היבואנים המקבילים' },
+    { l: 'טויוטה סיטי 5 מקומות', tc: [1242], k: 'CITY', t: '^CITY 5$' },
+    { l: 'סיטרואן ברלינגו 5 מקומות', k: '^BERLINGO$', t: 'SHINE', dn: 'EDYHZ' },
+    { l: 'טויוטה סיטי 7 מקומות', tc: [1242], k: 'CITY', t: '^CITY 7$' },
+    { l: 'סיטרואן ברלינגו 7 מקומות', k: '^BERLINGO$', t: 'SHINE', dn: 'EBYHZ' },
+    { l: 'יונדאי אלנטרה פריים', k: '^ELANTRA HEV$', t: '^PRIME' },
+    { l: 'MG ZS HYBRID LUXURY 1.5', tc: [443], k: '^ZS$', t: '^LUXURY$', pr: 'h' },
+    { l: "ניסאן ג'וק היברידי אסנטה טק", k: '^JUKE (HYBRID|HEV)$', t: '^ACENTA-TECH$' },
+    { l: 'קיה נירו היברידי (SG2)', tc: [885], k: '^NIRO HEV$' },
+    { l: 'יונדאי אלנטרה פרימיום', k: '^ELANTRA HEV$', t: '^PREMIUM' },
+    { l: 'יונדאי אלנטרה סופרים', k: '^ELANTRA HEV$', t: '^SUPREME' },
+    { l: 'טויוטה יאריס קרוס אקו', k: '^YARIS CROSS', t: '^ECO$' },
+    { l: "דאצ'יה דאסטר אקספרסיון", k: '^DUSTER$', t: '^EXPRESSION$' },
+    { l: 'יונדאי קונה פרימיום', k: '^KONA HYBRID$', t: '^PREMIUM$' },
+    { l: 'טויוטה קורולה קרוס Dynamic', k: '^COROLLA CROSS$', t: '^DYNAMIC$' },
+    { l: 'יונדאי קונה PURE', k: '^KONA HYBRID$', t: '^PURE$' },
+    { l: "דאצ'יה דאסטר היברידי ג'רני", k: '^DUSTER (HYBRID|HEV)$', t: '^JOURNEY$' },
+    { l: 'יונדאי קונה Ultimate', k: '^KONA HYBRID$', t: '^ULTIMATE$' },
+    { l: "קיה ספורטאז' NQ5 PE ארוך HEV", k: '^SPORTAGE HEV$', t: '^URBAN LONG$' },
+    { l: "קיה ספורטאז' 1.6L פרימיום היברידי", k: '^SPORTAGE HEV$', t: '^PREMIUM$', pr: 'h' },
+    { l: "קיה ספורטאז' 1.6L פרימיום היברידי ארוך", k: '^SPORTAGE HEV$', t: '^PREMIUM LONG$' },
+    { l: "קיה ספורטאז' NQ5E PE HEV URBAN", k: '^SPORTAGE HEV$', t: '^URBAN$' },
+    { l: 'קיה סורנטו HEV MQ4 PE – 6 מקומות', k: '^SORENTO$', t: '^EX TOP$' },
+    { l: 'טויוטה יאריס קרוס אורבן', k: '^YARIS CROSS', t: '^URBAN$' },
+    { l: 'MG HS HEV COMFORT', tc: [443], k: '^HS HYBRID$', t: '^COMFORT$' },
+    { l: 'טויוטה קורולה סדאן היברידית', k: '^COROLLA SDN HSD$' },
+    { l: 'טויוטה קורולה קרוס ACTIVE', k: '^COROLLA CROSS$', t: '^ACTIVE$' },
+    { l: 'טויוטה ראב 4 – E-EXPERIENCE', k: '^RAV4 (HYBRID|HSD)$', t: '^E-XPERIENCE$' },
+    { l: 'טויוטה ראב 4 – E-MOTION', k: '^RAV4 (HYBRID|HSD)$', t: '^E-MOTION$' },
+    { l: "יונדאי סונטה לקצ'ורי", k: '^SONATA HYBRID$', t: '^LUXURY' },
+    { l: 'טויוטה קאמרי XLE', k: '^CAMRY HYBRID$', t: '^XLE$' },
+    { l: 'יונדאי סונטה לימיטד', k: '^SONATA HYBRID$', t: '^LIMITED' },
+    { l: 'MG HS HEV LUXURY', tc: [443], k: '^HS HYBRID$', t: '^LUXURY$' },
+    { l: "דאצ'יה ג'וגר היברידי", k: '^JOGGER HYBRID$' },
+    { l: 'יונדאי סנטה פה ESSENCE', k: '^SANTA FE HYBRID$', t: '^ESSENCE$' },
+    { l: 'איסוזו דימקס S+', k: '^D-MAX$', t: '^S PLUS$' },
+    { l: 'קיה קרניבל 8 מקומות EX PLUS', k: '^CARNIVAL$', t: '^EX PLUS$' }
+  ];
+
+  function featuredRecs(f) {
+    const re = s => s ? new RegExp(s, 'i') : null;
+    const k = re(f.k), t = re(f.t), dn = re(f.dn);
+    let m = idx.recs.filter(r => (!f.tc || f.tc.includes(r.tc)) && (!k || k.test(r.k)) && (!t || t.test(r.t))
+      && (!dn || dn.test(r.dn)) && (!f.pr || r.pr === f.pr));
+    if (!m.length) return [];
+    const y = Math.max(...m.map(r => r.y));                 // השנה העדכנית ביותר = רכב חדש
+    m = m.filter(r => r.y === y);
+    if (!f.any && m.some(r => r.off)) m = m.filter(r => r.off);
+    return m.sort((a, b) => a.p - b.p);
+  }
+
+  const trimsOf = recs => {
+    const ts = [...new Set(recs.map(r => r.t).filter(Boolean))];
+    return ts.length > 3 ? ts.slice(0, 3).join(' / ') + ' ועוד' : ts.join(' / ');
+  };
+  const range = (vals, f) => {
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    return lo === hi ? f(lo) : `${f(lo)}–${f(hi)}`;
+  };
+
+  function renderFeatured() {
+    if (!idx) return;
+    const rows = FEATURED.map(f => ({ f, recs: featuredRecs(f) }));
+    const showCost = !!bracket;
+    const ltr = x => `<span dir="ltr" style="unicode-bidi:isolate">${x}</span>`;
+    let h = `<div class="sec">דגמים נבחרים <small>· רכבים חדשים · לחצו על דגם לפירוט${showCost ? '' : ' · בחרו מדרגת מס למעלה להערכת העלות נטו'}</small></div>
+      <div class="card" style="display:block;padding:0">`;
+    rows.forEach(({ f, recs }, i) => {
+      const u = recs.map(r => S.usageValue(r.p, r.pr, r));
+      h += `<div data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;${i ? 'border-top:1px solid var(--line);' : ''}cursor:${recs.length ? 'pointer' : 'default'}">
+        <div style="min-width:0">
+          <div style="font-weight:700">${esc(f.l)}</div>
+          ${recs.length ? `<div style="color:var(--muted);font-size:.78rem">${esc(recs[0].k)} ${esc(trimsOf(recs))} · ${recs[0].y}${f.note ? '<br>' + esc(f.note) : ''}</div>` : ''}
+        </div>
+        ${recs.length ? `<div style="text-align:left;white-space:nowrap;flex-shrink:0">
+          <div style="color:var(--good);font-weight:800;font-size:1.05rem">${ltr(range(u, fmt))}</div>
+          <div style="color:var(--muted);font-size:.78rem">מחירון ${ltr(range(recs.map(r => r.p), fmt))}</div>
+          ${showCost ? `<div style="font-size:.78rem">עלות משוערת* כ-${ltr(range(u.map(x => Math.round(costOf(x) / 10) * 10), fmt))}</div>` : ''}
+        </div>` : `<div style="color:var(--muted);font-size:.85rem">לא נמצא בנתונים</div>`}
+      </div>`;
+    });
+    h += `</div>
+      <div style="color:var(--muted);font-size:.8rem;margin:4px 2px 0">הסכום הירוק הוא שווי השימוש החודשי. טווח = כמה קודי דגם או גרסאות לאותו דגם.${showCost ? ' * עלות משוערת היא הערכה בלבד – ראו הסבר בתחתית הדף.' : ''}</div>`;
+    out.innerHTML = h;
+    out.querySelectorAll('[data-i]').forEach(el => el.addEventListener('click', () => {
+      const { f, recs } = rows[+el.dataset.i];
+      if (!recs.length) return;
+      out.innerHTML = `<div class="sec">${esc(f.l)} <small>· ${recs.length > 1 ? recs.length + ' קודי דגם' : 'קוד דגם אחד'}</small></div><div id="list"></div>
+        <button class="more" id="back">← חזרה לדגמים הנבחרים</button>`;
+      recs.forEach(r => $('list').appendChild(card(Object.assign({ dcs: [r.dc] }, r))));
+      $('back').onclick = () => { renderFeatured(); window.scrollTo(0, 0); };
+      window.scrollTo(0, 0);
+    }));
+  }
+
   // ===== חיפוש =====
   let timer;
   q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 220); });
@@ -87,7 +188,7 @@
   function run() {
     const text = q.value.trim();
     history.replaceState(null, '', text ? '?q=' + encodeURIComponent(text) : location.pathname);
-    if (!text) { out.innerHTML = ''; return; }
+    if (!text) { renderFeatured(); return; }
     const digits = text.replace(/[\s-]/g, '');
     if (/^\d{7,8}$/.test(digits)) return plate(digits);
     if (!idx) { pending = text; out.innerHTML = '<div class="note">המחירון עדיין נטען…</div>'; return; }
