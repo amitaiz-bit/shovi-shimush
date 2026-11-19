@@ -152,13 +152,26 @@
       out.innerHTML = h + '<div id="list"></div>';
       const list = $('list');
       if (!rows.length) { list.innerHTML = '<div class="note warn">לא נמצא מחיר מחירון לקוד הדגם הזה. בדקו בסימולטור של רשות המסים.</div>'; return; }
-      const ordered = pick ? [pick, ...rows.filter(r => r !== pick)] : rows.sort((a, b) => Math.abs(a.y - yReg) - Math.abs(b.y - yReg) || (b.off - a.off));
-      ordered.forEach((r, i) => {
+      const mk = (r, tag) => {
         const rec = Object.assign({}, r, { t: r.t || car.ramat_gimur || '' });
         if (fuelProp && rec.pr === 'r' && !rec.u) rec.pr = fuelProp;
-        const tag = i === 0 && pick ? `<span style="color:var(--good);font-weight:700">✓ מחירון שנת ${pick.y === yReg ? 'העלייה לכביש' : 'הייצור'}</span>` : '';
-        list.appendChild(card(rec, tag));
-      });
+        return card(rec, tag);
+      };
+      if (pick) {
+        // התוצאה של הרכב הזה: שנת העלייה לכביש. שאר השנים של אותו קוד דגם – רק בלחיצה
+        list.appendChild(mk(pick, `<span style="color:var(--good);font-weight:700">✓ לפי שנת ${pick.y === yReg ? 'העלייה לכביש' : 'הייצור'} (${pick.y})</span>`));
+        const others = rows.filter(r => r !== pick).sort((a, b) => b.y - a.y);
+        if (others.length) {
+          const btn = document.createElement('button');
+          btn.className = 'more';
+          btn.textContent = `אותו קוד דגם בשנות רישום אחרות (${others.length})`;
+          btn.onclick = () => { btn.remove(); others.forEach(r => list.appendChild(mk(r))); };
+          list.appendChild(btn);
+        }
+      } else {
+        list.insertAdjacentHTML('beforeend', `<div class="note warn">לא נמצא מחירון לשנת ${yReg} – מוצגות השנים הקרובות לאותו קוד דגם.</div>`);
+        rows.sort((a, b) => Math.abs(a.y - yReg) - Math.abs(b.y - yReg) || (b.off - a.off)).forEach(r => list.appendChild(mk(r)));
+      }
     } catch (e) {
       out.innerHTML = `<div class="note warn">שגיאה בפנייה למאגר משרד התחבורה (${esc(e.message)}). נסו שוב בעוד רגע.</div>`;
     }
