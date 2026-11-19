@@ -3,11 +3,13 @@
 // מקור עיקרי: הקובץ הרשמי של רשות המסים לשווי שימוש (מחיר מחירון, מחיר מתואם ושווי שימוש מחושב
 //   לכל שנת רישום/קוד תוצר/קוד דגם). זהו המקור המחייב.
 // העשרה: מחירון יבואן (שם היבואן), WLTP ומאגר כלי הרכב (רמת גימור, נפח, כ"ס, מרכב).
-// גיבוי: אם הורדת הקובץ של רשות המסים נכשלת – בונים ממחירון היבואן ומחשבים בנוסחה.
+// אתר רשות המסים חוסם גישה מחו"ל (שרתי GitHub), ולכן הקובץ נשמר גם ב-repo: data/taxes-official.csv.
+//   סדר עדיפויות: הורדה ישירה → הקובץ שב-repo → מחירון היבואן עם חישוב בנוסחה (הכי פחות מדויק).
+//   הקובץ הרשמי מתעדכן כמה פעמים בשנה (בעיקר בינואר) – אז צריך להחליף את הקובץ שב-repo.
 //
 //   node scripts/build-data.mjs          -> מלא
 //   node scripts/build-data.mjs --fast   -> בלי סריקת מאגר הרכבים (מהיר, פחות רמות גימור לשנים ישנות)
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile } from 'node:fs/promises';
 
 const API = 'https://data.gov.il/api/3/action/datastore_search';
 const RES = {
@@ -17,6 +19,7 @@ const RES = {
 };
 const TAX_PAGE = 'https://secapp.taxes.gov.il/mm_usecar10/DownLoad.aspx?cur=2';
 const TAX_BUTTON = 'ctl00$ContentUsersPage$btnexcel2'; // "קובץ מידע לאימות נתונים – מורחב" לשנה הנוכחית
+const TAX_LOCAL = 'data/taxes-official.csv';
 const MIN_YEAR = 2010;
 const FAST = process.argv.includes('--fast');
 const PAGE = 32000;
@@ -68,9 +71,9 @@ const decodeHtml = s => s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace
 function attr(tag, name) { const m = new RegExp(name + '="([^"]*)"', 'i').exec(tag); return m ? decodeHtml(m[1]) : null; }
 
 async function fetchTaxFile() {
-  for (let attempt = 1; attempt <= 4; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const r1 = await fetch(TAX_PAGE, { headers: UA });
+      const r1 = await fetch(TAX_PAGE, { headers: UA, signal: AbortSignal.timeout(20000) });
       if (!r1.ok) throw new Error('GET HTTP ' + r1.status);
       const html = await r1.text();
       const cookie = (r1.headers.getSetCookie ? r1.headers.getSetCookie() : []).map(c => c.split(';')[0]).join('; ');
@@ -86,13 +89,17 @@ async function fetchTaxFile() {
       const r2 = await fetch(action, {
         method: 'POST',
         headers: { ...UA, 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': TAX_PAGE, ...(cookie ? { Cookie: cookie } : {}) },
-        body: form
+        body: form,
+        signal: AbortSignal.timeout(120000)
       });
       const ct = r2.headers.get('content-type') || '';
       if (!r2.ok || !/csv|octet|excel/i.test(ct)) throw new Error(`POST HTTP ${r2.status} (${ct})`);
       const buf = new Uint8Array(await r2.arrayBuffer());
       console.log(`  ${(buf.length / 1e6).toFixed(1)}MB, ${r2.headers.get('content-disposition') || ''}`);
-      return new TextDecoder('windows-1255').decode(buf);
+      const text = new TextDecoder('windows-1255').decode(buf);
+      // שומרים עותק מקומי (מקוצר) כדי שהריצות הבאות יוכלו להשתמש בו גם אם האתר יחסם
+      await writeFile(TAX_LOCAL, compactTax(text), 'utf8').catch(() => {});
+      return text;
     } catch (e) { console.warn(`  attempt ${attempt}: ${e.message}`); await sleep(3000 * attempt); }
   }
   return null;
@@ -102,6 +109,17 @@ async function fetchTaxFile() {
 //         הנעה (1 היברידי, 2 פלאג-אין, 3 חשמלי), ציון ירוק, דרגת זיהום, נפח מנוע, משקל, תאריך תחולה,
 //         מחיר מחירון, מחיר מתואם, שווי שימוש
 const TAX_PROP = { '0': 'r', '1': 'h', '2': 'p', '3': 'e' };
+const TAX_KEEP = [0, 1, 3, 4, 5, 6, 8, 10, 13, 16, 17, 18]; // עמודות שנשמרות בעותק המקוצר; השאר ריקות
+function compactTax(text) {
+  const lines = text.split(/\r?\n/);
+  const out = [lines[0].split(',').map(x => x.trim()).join(',')];
+  for (let i = 1; i < lines.length; i++) {
+    const f = lines[i].split(',').map(x => x.trim());
+    if (f.length < 19 || num(f[1]) < MIN_YEAR) continue;
+    out.push(f.map((v, j) => (TAX_KEEP.includes(j) ? v : '')).join(','));
+  }
+  return out.join('\n') + '\n';
+}
 function parseTax(text) {
   const lines = text.split(/\r?\n/);
   const out = []; let bad = 0, taxYear = 0;
@@ -140,7 +158,11 @@ class Mode {
 
 async function main() {
   console.log('1) קובץ שווי שימוש של רשות המסים');
-  const taxText = await fetchTaxFile();
+  let taxText = await fetchTaxFile();
+  if (!taxText) {
+    try { taxText = await readFile(TAX_LOCAL, 'utf8'); console.log(`  הורדה ישירה נכשלה – משתמשים בקובץ ${TAX_LOCAL}`); }
+    catch { console.warn(`  גם ${TAX_LOCAL} לא נמצא`); }
+  }
   const TAX = taxText ? parseTax(taxText) : null;
   if (!TAX || TAX.rows.length < 5000) console.warn('  ⚠ לא התקבל קובץ רשות המסים – בונים ממחירון היבואן (פחות מדויק)');
 
