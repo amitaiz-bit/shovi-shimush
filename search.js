@@ -62,7 +62,7 @@
     'פיגו': 'peugeot', 'פיזו': 'peugeot', 'רנו': 'renault', 'דאציה': 'dacia', 'דציה': 'dacia', 'סיטרואן': 'citroen',
     'אופל': 'opel', 'סיאט': 'seat', 'טסלה': 'tesla', 'לקסוס': 'lexus', 'במוו': 'bmw', 'מרצדס': 'mercedes benz',
     'אאודי': 'audi', 'אודי': 'audi', 'וולוו': 'volvo', 'גיפ': 'jeep', 'פיאט': 'fiat', 'מיני': 'mini',
-    'גנסיס': 'genesis', 'אמגי': 'mg', 'ביוודי': 'byd', 'בי': 'byd', 'צרי': 'chery', 'גילי': 'geely',
+    'גנסיס': 'genesis', 'אמגי': 'mg', 'מגי': 'mg', 'מג': 'mg', 'זיאס': 'zs', 'דיאס': 'ds', 'מזדה': 'mazda', 'סיאייצאר': 'c-hr chr', 'ביוודי': 'byd', 'בי': 'byd', 'צרי': 'chery', 'גילי': 'geely',
     'קרייזלר': 'chrysler', 'דודג': 'dodge', 'לנד': 'land', 'רובר': 'rover', 'פורשה': 'porsche',
     'אלפא': 'alfa', 'רומיאו': 'romeo', 'סאנגיונג': 'ssangyong', 'איסוזו': 'isuzu', 'דייהטסו': 'daihatsu',
     'קופרה': 'cupra', 'זיקר': 'zeekr', 'אקספנג': 'xpeng', 'לינק': 'lynk', 'סמארט': 'smart', 'אינפיניטי': 'infiniti',
@@ -231,6 +231,13 @@
     const raw = tokens(query);
     let year = null;
     const qt = [];
+    // צירוף מילים עוקבות שמופיעות במילון כביטוי אחד ("זי אס" -> zs)
+    for (let i = 0; i < raw.length - 1; i++) {
+      for (let n = 3; n >= 2; n--) {
+        const j = raw.slice(i, i + n).join('');
+        if (i + n <= raw.length && ALIASES.has(j)) { raw.splice(i, n, j); break; }
+      }
+    }
     for (const t of raw) {
       if (/^(19[89]\d|20[0-4]\d)$/.test(t) && year == null) year = +t;
       else if (!qt.includes(t)) qt.push(t);
@@ -280,8 +287,21 @@
     const near = maxM > 1 ? cand.filter(i => matched[i] === maxM - 1).sort(cmp) : [];
     const lim = opts.limit || 300;
     const wrap = i => Object.assign({ score: Math.round(score[i] * 10) / 10, matched: matched[i] }, idx.recs[i]);
-    out.exact = strong.slice(0, lim).map(wrap);
-    out.near = weak.concat(near).slice(0, opts.nearLimit || 40).map(wrap);
+    // איחוד שורות זהות (אותו דגם, גימור, שנה ומחיר) שנבדלות רק בקוד הדגם
+    const merge = list => {
+      const map = new Map(), res = [];
+      for (const i of list) {
+        const r = idx.recs[i], key = [r.m, r.k, r.t, r.y, r.p, r.pr].join('|');
+        const ex = map.get(key);
+        if (ex) { if (!ex.dcs.includes(r.dc)) ex.dcs.push(r.dc); continue; }
+        const w = wrap(i); w.dcs = [r.dc]; map.set(key, w); res.push(w);
+      }
+      return res;
+    };
+    const ex2 = merge(strong);
+    out.total = ex2.length;
+    out.exact = ex2.slice(0, lim);
+    out.near = merge(weak.concat(near)).slice(0, opts.nearLimit || 40);
     out.maxMatched = maxM;
     return out;
   }
