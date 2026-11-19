@@ -29,7 +29,7 @@
     const bar = document.createElement('div');
     bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;font-size:.9rem;color:var(--muted)';
     bar.innerHTML = `<label for="bracket">להערכת העלות נטו – מדרגת המס שלי:</label>
-      <select id="bracket" style="font:inherit;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);padding:3px 6px">
+      <select id="bracket" style="max-width:100%;font:inherit;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);padding:3px 6px">
         <option value="0">לא נבחר</option>
         ${BRACKETS.map(b => `<option value="${b.r}"${b.r === bracket ? ' selected' : ''}>${b.r}% (שכר ${b.t})</option>`).join('')}
       </select>`;
@@ -50,8 +50,8 @@
       const built = d.built ? new Date(d.built).toLocaleDateString('he-IL') : '';
       status.textContent = `${idx.recs.length.toLocaleString('he-IL')} דגמים במחירון` + (built ? ` · עודכן ${built}` : '');
       footer(built);
-      const fromUrl = new URLSearchParams(location.search).get('q');
-      if (fromUrl) { q.value = fromUrl; run(); }
+      const p = new URLSearchParams(location.search);
+      if (p.get('q') || p.get('m') != null) fromUrl();
       else if (pending) run();
       else renderFeatured();
     })
@@ -84,7 +84,7 @@
   // tc – קודי תוצר, k – כינוי מסחרי, t – רמת גימור, dn – תיאור דגם, pr – סוג הנעה, imp – יבואן. נלקחת השנה העדכנית ביותר,
   // ועדיפות ליבואן הרשמי. כשיש כמה קודי דגם מתאימים – מוצג טווח.
   const FEATURED = [
-    { l: 'טויוטה סיינה', tc: [488], k: 'SIENNA', imp: 'טרגט', any: true, note: 'יבואן: טרגט מוטורס – טווח לכל רמות הגימור' },
+    { l: 'טויוטה סיינה LE', tc: [488], k: 'SIENNA', t: '^LE$', imp: 'טרגט', any: true, note: 'יבואן: טרגט מוטורס' },
     { l: 'טויוטה סיטי 5 מקומות', tc: [1242], k: 'CITY', t: '^CITY 5$' },
     { l: 'סיטרואן ברלינגו 5 מקומות', k: '^BERLINGO$', t: 'SHINE', dn: 'EDYHZ' },
     { l: 'טויוטה סיטי 7 מקומות', tc: [1242], k: 'CITY', t: '^CITY 7$' },
@@ -123,6 +123,10 @@
     { l: 'קיה קרניבל 8 מקומות EX PLUS', k: '^CARNIVAL$', t: '^EX PLUS$' }
   ];
 
+  // מיון לפי א-ב: שמות בעברית קודם, אחריהם שמות שמתחילים באנגלית
+  const isHeb = s => /^[\u0590-\u05FF]/.test(s);
+  FEATURED.sort((a, b) => (isHeb(b.l) - isHeb(a.l)) || a.l.localeCompare(b.l, 'he'));
+
   function featuredRecs(f) {
     const re = s => s ? new RegExp(s, 'i') : null;
     const k = re(f.k), t = re(f.t), dn = re(f.dn), imp = re(f.imp);
@@ -144,9 +148,12 @@
     return lo === hi ? f(lo) : `${f(lo)}–${f(hi)}`;
   };
 
+  let fRows = null;
+  const featRows = () => fRows || (fRows = FEATURED.map(f => ({ f, recs: featuredRecs(f) })));
+
   function renderFeatured() {
     if (!idx) return;
-    const rows = FEATURED.map(f => ({ f, recs: featuredRecs(f) }));
+    const rows = featRows();
     const showCost = !!bracket;
     const ltr = x => `<span dir="ltr" style="unicode-bidi:isolate">${x}</span>`;
     let h = `<div class="sec">דגמים נבחרים <small>· רכבים חדשים · לחצו על דגם לפירוט${showCost ? '' : ' · בחרו מדרגת מס למעלה להערכת העלות נטו'}</small></div>
@@ -169,15 +176,36 @@
       <div style="color:var(--muted);font-size:.8rem;margin:4px 2px 0">הסכום הירוק הוא שווי השימוש החודשי. טווח = כמה קודי דגם או גרסאות לאותו דגם.${showCost ? ' * עלות משוערת היא הערכה בלבד – ראו הסבר בתחתית הדף.' : ''}</div>`;
     out.innerHTML = h;
     out.querySelectorAll('[data-i]').forEach(el => el.addEventListener('click', () => {
-      const { f, recs } = rows[+el.dataset.i];
-      if (!recs.length) return;
-      out.innerHTML = `<div class="sec">${esc(f.l)} <small>· ${recs.length > 1 ? recs.length + ' קודי דגם' : 'קוד דגם אחד'}</small></div><div id="list"></div>
-        <button class="more" id="back">← חזרה לדגמים הנבחרים</button>`;
-      recs.forEach(r => $('list').appendChild(card(Object.assign({ dcs: [r.dc] }, r))));
-      $('back').onclick = () => { renderFeatured(); window.scrollTo(0, 0); };
-      window.scrollTo(0, 0);
+      const i = +el.dataset.i;
+      if (!rows[i].recs.length) return;
+      history.pushState({ inSite: true }, '', '?m=' + i);   // כפתור "הקודם" יחזור לרשימה
+      openFeatured(i);
     }));
   }
+
+  function openFeatured(i) {
+    const row = featRows()[i];
+    if (!row || !row.recs.length) { renderFeatured(); return; }
+    const { f, recs } = row;
+    out.innerHTML = `<div class="sec">${esc(f.l)} <small>· ${recs.length > 1 ? recs.length + ' קודי דגם' : 'קוד דגם אחד'}</small></div><div id="list"></div>
+      <button class="more" id="back">← חזרה לדגמים הנבחרים</button>`;
+    recs.forEach(r => $('list').appendChild(card(Object.assign({ dcs: [r.dc] }, r))));
+    $('back').onclick = () => {
+      if (history.state && history.state.inSite) history.back();
+      else { history.replaceState(null, '', location.pathname); renderFeatured(); window.scrollTo(0, 0); }
+    };
+    window.scrollTo(0, 0);
+  }
+
+  // ===== ניווט בתוך האתר (כפתור "הקודם") =====
+  function fromUrl() {
+    const p = new URLSearchParams(location.search);
+    const m = p.get('m'), text = p.get('q') || '';
+    q.value = text;
+    if (m != null && !text) { if (idx) openFeatured(+m); return; }
+    run(true);
+  }
+  window.addEventListener('popstate', () => { clearTimeout(timer); fromUrl(); window.scrollTo(0, 0); });
 
   // ===== חיפוש =====
   let timer;
@@ -185,9 +213,15 @@
   $('f').addEventListener('submit', e => { e.preventDefault(); clearTimeout(timer); run(); q.blur(); });
   $('chips').addEventListener('click', e => { if (e.target.classList.contains('chip')) { q.value = e.target.textContent; run(); } });
 
-  function run() {
+  function run(fromHistory) {
     const text = q.value.trim();
-    history.replaceState(null, '', text ? '?q=' + encodeURIComponent(text) : location.pathname);
+    if (fromHistory !== true) {
+      const url = text ? '?q=' + encodeURIComponent(text) : location.pathname;
+      const wasSearch = new URLSearchParams(location.search).has('q');
+      // מעבר לחיפוש חדש – רשומה חדשה בהיסטוריה; המשך הקלדה באותו חיפוש – רק עדכון הכתובת
+      if (text && !wasSearch) history.pushState({ inSite: true }, '', url);
+      else history.replaceState(history.state, '', url);
+    }
     if (!text) { renderFeatured(); return; }
     const digits = text.replace(/[\s-]/g, '');
     if (/^\d{7,8}$/.test(digits)) return plate(digits);
@@ -252,7 +286,7 @@
         <div class="lbl">שווי שימוש חודשי – מעודכן ל-${S.TAX.year}</div>
         <div class="num"></div>
         <div class="price">מחיר מתואם ${fmt(rec.adj || rec.p)}${(rec.adj || rec.p) > S.TAX.cap ? ' (מעל התקרה)' : ''}</div>
-        <div class="asnew" style="font-size:.82rem;white-space:nowrap;margin-top:2px">כחדש: <b class="num2"></b> <span style="color:var(--muted)">(מחירון ${fmt(rec.p)}, בלי הצמדה)</span></div>
+        <div class="asnew" style="font-size:.82rem;margin-top:2px">כחדש: <b class="num2"></b> <span style="color:var(--muted)">(מחירון ${fmt(rec.p)}, בלי הצמדה)</span></div>
         <div class="cost" style="font-size:.82rem;margin-top:4px;padding:3px 8px;border-radius:8px;background:var(--accent-soft);display:none"></div>
       </div>`;
     const numEl = d.querySelector('.num'), num2El = d.querySelector('.num2'), costEl = d.querySelector('.cost'), sel = d.querySelector('select');
