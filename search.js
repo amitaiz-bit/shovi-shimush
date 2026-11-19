@@ -7,7 +7,7 @@
     year: 2026,
     rate: 0.0248,          // 2.48% ממחיר המחירון
     cap: 596860,           // תקרת מחיר מחירון
-    reduction: { r: 0, h: 560, p: 1130, e: 1350 } // הפחתה חודשית לפי סוג הנעה
+    reduction: { r: 0, h: 580, p: 1150, e: 1380 } // הפחתה חודשית לפי סוג הנעה (2026)
   };
   const PROP_LABEL = { r: 'בנזין/דיזל', h: 'היברידי', p: 'פלאג-אין', e: 'חשמלי' };
   const PROP_WORDS = {
@@ -17,7 +17,11 @@
     e: ['חשמלי', 'חשמל', 'electric', 'ev']
   };
 
-  function usageValue(price, prop) {
+  // rec (אופציונלי): רשומה מקובץ רשות המסים – אם סוג ההנעה לא שונה, מחזירים את השווי הרשמי.
+  // אחרת מחשבים לפי המחיר המתואם (מחיר מחירון צמוד למדד), ואם אין – לפי מחיר המחירון.
+  function usageValue(price, prop, rec) {
+    if (rec && rec.u && prop === rec.pr) return rec.u;
+    if (rec && rec.adj) price = rec.adj;
     if (!price || price <= 0) return null;
     const base = Math.min(price, TAX.cap);
     const gross = Math.round((base * TAX.rate) / 10) * 10;
@@ -159,9 +163,10 @@
   const W = [10, 8, 7, 5, 9, 4, 4, 3, 2];
 
   function rowToRec(r, d) {
-    // [mIdx, tozeret_cd, degem_cd, degem_nm, kinuy, year, price, trim, cc, hp, prop, body, impIdx]
+    // [mIdx, tozeret_cd, degem_cd, degem_nm, kinuy, year, price, trim, cc, hp, prop, body, impIdx, adjPrice, usage]
     return { m: d.m[r[0]] || '', tc: r[1], dc: r[2], dn: r[3] || '', k: r[4] || '', y: r[5], p: r[6],
-      t: r[7] || '', cc: r[8] || 0, hp: r[9] || 0, pr: r[10] || 'r', b: r[11] || '', imp: d.i[r[12]] || '' };
+      t: r[7] || '', cc: r[8] || 0, hp: r[9] || 0, pr: r[10] || 'r', b: r[11] || '', imp: d.i[r[12]] || '',
+      adj: r[13] || 0, u: r[14] || 0 };
   }
 
   function createIndex(data) {
@@ -291,7 +296,7 @@
     const merge = list => {
       const map = new Map(), res = [];
       for (const i of list) {
-        const r = idx.recs[i], key = [r.m, r.k, r.t, r.y, r.p, r.pr].join('|');
+        const r = idx.recs[i], key = [r.m, r.k, r.t, r.y, r.p, r.pr, r.imp].join('|');
         const ex = map.get(key);
         if (ex) { if (!ex.dcs.includes(r.dc)) ex.dcs.push(r.dc); continue; }
         const w = wrap(i); w.dcs = [r.dc]; map.set(key, w); res.push(w);
