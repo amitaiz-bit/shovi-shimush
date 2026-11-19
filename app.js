@@ -64,8 +64,8 @@
     if (r.yearRelaxed) h += `<div class="note warn">לא נמצאו דגמים משנת ${r.year} – מוצגות שנים סמוכות.</div>`;
     if (!r.exact.length) { out.innerHTML = h + '<div class="note">לא נמצאו תוצאות.</div>'; return; }
 
-    const many = r.exact.length > 1;
-    h += `<div class="sec">${many ? r.exact.length + ' דגמים תואמים' : 'דגם תואם'}
+    const many = r.total > 1;
+    h += `<div class="sec">${many ? r.total.toLocaleString('he-IL') + ' דגמים תואמים' : 'דגם תואם'}
       ${many && r.tokens.length < 3 ? '<small>· הוסיפו רמת גימור, נפח מנוע או סוג הנעה כדי לצמצם</small>' : ''}</div>`;
     h += `<div id="list"></div>`;
     if (r.near.length) h += `<div class="sec">דגמים קרובים <small>· התאמה חלקית</small></div><div id="near"></div>`;
@@ -99,7 +99,7 @@
       <div class="title">${esc(rec.m)} ${esc(rec.k || rec.dn)} ${rec.t ? `<span class="trim">${esc(rec.t)}</span>` : ''}</div>
       <div class="meta">
         <span>שנת ${rec.y}</span>
-        <span>קוד דגם ${rec.dc}</span>
+        <span>קוד דגם ${(rec.dcs || [rec.dc]).join(', ')}</span>
         ${rec.dn && rec.k ? `<span>${esc(rec.dn)}</span>` : ''}
         ${engine ? `<span>${engine}</span>` : ''}
         ${rec.hp ? `<span>${rec.hp} כ״ס</span>` : ''}
