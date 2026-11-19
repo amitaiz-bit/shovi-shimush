@@ -169,8 +169,30 @@
       adj: r[13] || 0, u: r[14] || 0 };
   }
 
+  // יבואן רשמי: היבואן עם הכי הרבה דגמים של אותו מותג (וחברות באותו שם, למשל צ'מפיון מוטורס / צ'מפיון קאר).
+  // יבואנים מקבילים מייבאים מעט דגמים, ולכן הם תמיד במקום נמוך יותר.
+  function markOfficial(recs) {
+    const brandOf = m => norm(m).split(' ')[0] || '';
+    const firstWord = s => norm(s).split(' ')[0] || '';
+    const cnt = new Map();
+    for (const r of recs) {
+      if (!r.imp) continue;
+      const b = brandOf(r.m);
+      if (!cnt.has(b)) cnt.set(b, new Map());
+      const c = cnt.get(b); c.set(r.imp, (c.get(r.imp) || 0) + 1);
+    }
+    const official = new Map();
+    for (const [b, c] of cnt) {
+      const sorted = [...c.entries()].sort((x, y) => y[1] - x[1]);
+      const top = sorted[0], w = firstWord(top[0]);
+      official.set(b, new Set(sorted.filter(([imp, n]) => imp === top[0] || (w.length > 2 && firstWord(imp) === w) || n >= top[1] * 0.4).map(x => x[0])));
+    }
+    for (const r of recs) r.off = !!(r.imp && official.get(brandOf(r.m)) && official.get(brandOf(r.m)).has(r.imp));
+  }
+
   function createIndex(data) {
     const recs = data.rows.map(r => rowToRec(r, data));
+    markOfficial(recs);
     const vocab = new Map();
     const add = (tok, ri, f) => {
       let arr = vocab.get(tok);
@@ -282,6 +304,7 @@
     let maxM = 0;
     for (const i of cand) if (matched[i] > maxM) maxM = matched[i];
     const cmp = (a, b) => (score[b] - score[a])
+      || (idx.recs[b].off - idx.recs[a].off)          // יבואן רשמי קודם
       || (year != null ? Math.abs(idx.recs[a].y - year) - Math.abs(idx.recs[b].y - year) : idx.recs[b].y - idx.recs[a].y)
       || (idx.recs[a].p - idx.recs[b].p);
     const ex = cand.filter(i => matched[i] === maxM).sort(cmp);
