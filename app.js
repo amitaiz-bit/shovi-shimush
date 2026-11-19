@@ -13,6 +13,33 @@
 
   let idx = null, data = null, pending = null;
 
+  // ===== הערכת עלות נטו לעובד (הערכה בלבד) =====
+  // מדרגות מס הכנסה לשכיר (שכר חודשי ברוטו, בקירוב) וביטוח לאומי + מס בריאות לעובד 2026:
+  // 4.27% עד 7,703 ₪ (שיעור מופחת), 12.17% מעל (שיעור מלא).
+  const BRACKETS = [
+    { r: 10, t: 'עד כ-7,000 ₪' }, { r: 14, t: 'כ-7,000–10,000 ₪' }, { r: 20, t: 'כ-10,000–16,000 ₪' },
+    { r: 31, t: 'כ-16,000–22,500 ₪' }, { r: 35, t: 'כ-22,500–46,500 ₪' }, { r: 47, t: 'כ-46,500–60,000 ₪' }, { r: 50, t: 'מעל כ-60,000 ₪' }
+  ];
+  const BL_REDUCED = 4.27, BL_FULL = 12.17;
+  let bracket = 0;
+  try { bracket = +localStorage.getItem('shovi-bracket') || 0; } catch (e) { /* בלי אחסון */ }
+  const costOf = u => (bracket && u) ? u * (bracket + (bracket >= 20 ? BL_FULL : BL_REDUCED)) / 100 : null;
+  (function taxBar() {
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;font-size:.9rem;color:var(--muted)';
+    bar.innerHTML = `<label for="bracket">להערכת העלות נטו – מדרגת המס שלי:</label>
+      <select id="bracket" style="font:inherit;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);padding:3px 6px">
+        <option value="0">לא נבחר</option>
+        ${BRACKETS.map(b => `<option value="${b.r}"${b.r === bracket ? ' selected' : ''}>${b.r}% (שכר ${b.t})</option>`).join('')}
+      </select>`;
+    $('chips').after(bar);
+    $('bracket').addEventListener('change', e => {
+      bracket = +e.target.value;
+      try { localStorage.setItem('shovi-bracket', String(bracket)); } catch (err) { /* בלי אחסון */ }
+      if (q.value.trim()) run();
+    });
+  })();
+
   // ===== טעינת נתונים =====
   fetch('data/cars.json', { cache: 'no-cache' })
     .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -35,6 +62,9 @@
       ועליו משלמים מס הכנסה, ביטוח לאומי ומס בריאות. העלות בפועל משתנה מעובד לעובד, לפי מדרגת המס השולית
       (10%–50%, תלוי בגובה השכר), נקודות הזיכוי ושיעור הביטוח הלאומי. לדוגמה, שווי של ₪4,000 במדרגה של 31%
       יעלה בערך ₪1,240 מס הכנסה בחודש, ועוד ביטוח לאומי ומס בריאות. יש מעסיקים שלוקחים על עצמם את המס ("גילום").</p>
+      <p><b>* העלות המשוערת היא הערכה בלבד, ולא החישוב הסופי.</b> היא מחושבת כשווי השימוש כפול מדרגת המס השולית שבחרתם,
+      ועוד ביטוח לאומי ומס בריאות (4.27% לשכר עד 7,703 ₪, 12.17% מעליו). בפועל הסכום תלוי בשכר המלא, בנקודות הזיכוי,
+      בזיכויים ובפטורים נוספים, בשכר ממקומות עבודה נוספים ובגילום של המעסיק. הסכום המדויק מופיע רק בתלוש השכר.</p>
       <p><b>שני הערכים בכל תוצאה:</b> "מעודכן" – השווי שנזקף בפועל בתלוש השנה, לפי המחיר המתואם.
       "כחדש" – אותו חישוב לפי מחיר המחירון המקורי, בלי הצמדה למדד (כפי שהיה נזקף לרכב חדש באותו מחיר היום).</p>
       <p><b>אופן החישוב (שנת מס ${T.year}):</b> ${(T.rate * 100).toFixed(2)}% מהמחיר המתואם – מחיר המחירון של הרכב כחדש,
@@ -121,11 +151,16 @@
         <div class="num"></div>
         <div class="price">מחיר מתואם ${fmt(rec.adj || rec.p)}${(rec.adj || rec.p) > S.TAX.cap ? ' (מעל התקרה)' : ''}</div>
         <div class="asnew" style="font-size:.82rem;white-space:nowrap;margin-top:2px">כחדש: <b class="num2"></b> <span style="color:var(--muted)">(מחירון ${fmt(rec.p)}, בלי הצמדה)</span></div>
+        <div class="cost" style="font-size:.82rem;margin-top:4px;padding:3px 8px;border-radius:8px;background:var(--accent-soft);display:none"></div>
       </div>`;
-    const numEl = d.querySelector('.num'), num2El = d.querySelector('.num2'), sel = d.querySelector('select');
+    const numEl = d.querySelector('.num'), num2El = d.querySelector('.num2'), costEl = d.querySelector('.cost'), sel = d.querySelector('select');
     const upd = () => {
-      numEl.textContent = fmt(S.usageValue(rec.p, sel.value, rec));
+      const u = S.usageValue(rec.p, sel.value, rec);
+      numEl.textContent = fmt(u);
       num2El.textContent = fmt(S.usageValue(rec.p, sel.value));   // לפי מחיר המחירון המקורי
+      const c = costOf(u);
+      costEl.style.display = c ? '' : 'none';
+      if (c) costEl.innerHTML = `עלות משוערת לעובד: <b>כ-${fmt(Math.round(c / 10) * 10)}</b> לחודש <span style="color:var(--muted)">(הערכה בלבד*)</span>`;
     };
     sel.onchange = upd; upd();
     return d;
