@@ -31,11 +31,13 @@
   function footer(built) {
     const T = S.TAX;
     $('foot').innerHTML = `
-      <p><b>אופן החישוב (שנת מס ${T.year}):</b> ${(T.rate * 100).toFixed(2)}% ממחיר המחירון של הרכב כחדש בשנת העלייה לכביש,
-      מעוגל ל-10 ₪, עד תקרת מחירון של ${fmt(T.cap)}. בניכוי הפחתה חודשית: היברידי ${fmt(T.reduction.h)},
+      <p><b>אופן החישוב (שנת מס ${T.year}):</b> ${(T.rate * 100).toFixed(2)}% מהמחיר המתואם – מחיר המחירון של הרכב כחדש,
+      צמוד למדד מאז שנת הרישום – מעוגל ל-10 ₪, עד תקרה של ${fmt(T.cap)}. בניכוי הפחתה חודשית: היברידי ${fmt(T.reduction.h)},
       פלאג-אין ${fmt(T.reduction.p)}, חשמלי ${fmt(T.reduction.e)}.</p>
-      <p>מקור הנתונים: מחירון יבואן, מאגר דגמי WLTP ומאגר כלי הרכב של משרד התחבורה ב-data.gov.il${built ? ' (עדכון אחרון ' + built + ')' : ''}.
-      סוג ההנעה מזוהה אוטומטית ואפשר לשנות אותו בכל תוצאה.</p>
+      <p>${data && data.source === 'taxes'
+        ? 'מחירי המחירון ושווי השימוש לקוחים מהקובץ הרשמי של רשות המסים'
+        : 'מחירי המחירון לקוחים ממחירון היבואנים של משרד התחבורה'}${built ? ' (עדכון אחרון ' + built + ')' : ''}.
+      רמות הגימור והמפרט – ממאגרי משרד התחבורה ב-data.gov.il. לאותו דגם יכולים להיות כמה מחירים: לכל יבואן (רשמי או מקביל) מחיר מחירון משלו.</p>
       <p>התוצאה להמחשה בלבד. החישוב המחייב – ב<a href="https://www.misim.gov.il/mm_usecar10/UseCarScreen.aspx" target="_blank" rel="noopener">סימולטור רשות המסים</a>.</p>`;
   }
 
@@ -104,16 +106,17 @@
         ${engine ? `<span>${engine}</span>` : ''}
         ${rec.hp ? `<span>${rec.hp} כ״ס</span>` : ''}
         ${rec.b ? `<span>${esc(rec.b)}</span>` : ''}
+        ${rec.imp ? `<span>יבואן: ${esc(rec.imp)}</span>` : ''}
         <span><select class="prop" aria-label="סוג הנעה">${opts}</select></span>
         ${extra || ''}
       </div>
       <div class="val">
         <div class="lbl">שווי שימוש חודשי</div>
         <div class="num"></div>
-        <div class="price">מחירון ${fmt(rec.p)}${rec.p > S.TAX.cap ? ' (מעל התקרה)' : ''}</div>
+        <div class="price">מחירון ${fmt(rec.p)}${rec.adj && rec.adj !== rec.p ? ` · מתואם ${fmt(rec.adj)}` : ''}${Math.max(rec.p, rec.adj || 0) > S.TAX.cap ? ' (מעל התקרה)' : ''}</div>
       </div>`;
     const numEl = d.querySelector('.num'), sel = d.querySelector('select');
-    const upd = () => { numEl.textContent = fmt(S.usageValue(rec.p, sel.value)); };
+    const upd = () => { numEl.textContent = fmt(S.usageValue(rec.p, sel.value, rec)); };
     sel.onchange = upd; upd();
     return d;
   }
@@ -146,7 +149,7 @@
       const ordered = pick ? [pick, ...rows.filter(r => r !== pick)] : rows.sort((a, b) => Math.abs(a.y - yReg) - Math.abs(b.y - yReg));
       ordered.forEach((r, i) => {
         const rec = Object.assign({}, r, { t: r.t || car.ramat_gimur || '' });
-        if (fuelProp && rec.pr === 'r') rec.pr = fuelProp;
+        if (fuelProp && rec.pr === 'r' && !rec.u) rec.pr = fuelProp;
         const tag = i === 0 && pick ? `<span style="color:var(--good);font-weight:700">✓ מחירון שנת ${pick.y === yReg ? 'העלייה לכביש' : 'הייצור'}</span>` : '';
         list.appendChild(card(rec, tag));
       });
@@ -159,7 +162,7 @@
     const r = await api(PRICES, { filters: JSON.stringify({ tozeret_cd: tc, degem_cd: dc }), limit: 50 });
     return r.records.filter(x => +x.mehir > 0).map(x => ({
       m: x.tozeret_nm || car.tozeret_nm, tc, dc, dn: x.degem_nm || '', k: x.kinuy_mishari || car.kinuy_mishari || '',
-      y: +x.shnat_yitzur, p: +x.mehir, t: car.ramat_gimur || '', cc: 0, hp: 0, pr: 'r', b: '', imp: x.shem_yevuan || ''
+      y: +x.shnat_yitzur, p: +x.mehir, t: car.ramat_gimur || '', cc: 0, hp: 0, pr: 'r', b: '', imp: x.shem_yevuan || '', adj: 0, u: 0
     }));
   }
 
