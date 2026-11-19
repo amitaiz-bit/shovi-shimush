@@ -9,6 +9,7 @@
   const $ = id => document.getElementById(id);
   const q = $('q'), out = $('out'), status = $('status');
   const fmt = n => n == null ? '—' : '₪' + Math.round(n).toLocaleString('he-IL');
+  const pad5 = n => String(n ?? '').padStart(5, '0');   // כמו ברישיון הרכב ובסימולטור של רשות המסים
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   let idx = null, data = null, pending = null;
@@ -137,8 +138,8 @@
       <div class="title">${esc(rec.m)} ${esc(rec.k || rec.dn)} ${rec.t ? `<span class="trim">${esc(rec.t)}</span>` : ''}</div>
       <div class="meta">
         <span>שנת ${rec.y}</span>
-        <span>קוד דגם ${(rec.dcs || [rec.dc]).join(', ')}</span>
-        ${rec.dn && rec.k ? `<span>${esc(rec.dn)}</span>` : ''}
+        <span>קוד תוצר <b>${pad5(rec.tc)}</b> · קוד דגם <b>${(rec.dcs || [rec.dc]).map(pad5).join(', ')}</b></span>
+        ${rec.dn ? `<span>תיאור דגם: <b dir="ltr">${esc(rec.dn)}</b></span>` : ''}
         ${engine ? `<span>${engine}</span>` : ''}
         ${rec.hp ? `<span>${rec.hp} כ״ס</span>` : ''}
         ${rec.b ? `<span>${esc(rec.b)}</span>` : ''}
@@ -186,7 +187,7 @@
 
       let h = `<div class="sec"><span class="plate">${num}</span> · ${esc(car.tozeret_nm)} ${esc(car.kinuy_mishari || car.degem_nm)}
         ${car.ramat_gimur ? `<span style="color:var(--accent)">${esc(car.ramat_gimur)}</span>` : ''}</div>
-        <div class="note">שנת ייצור ${yProd || '—'} · עלה לכביש ${esc(car.moed_aliya_lakvish || '—')} · קוד תוצר ${tc} · קוד דגם ${dc} · ${esc(car.sug_delek_nm || '')}</div>`;
+        <div class="note">שנת ייצור ${yProd || '—'} · עלה לכביש ${esc(car.moed_aliya_lakvish || '—')} · קוד תוצר ${pad5(tc)} · קוד דגם ${pad5(dc)} · ${esc(car.sug_delek_nm || '')}</div>`;
       if (yReg < 2010) h += `<div class="note warn">הרכב נרשם לפני 2010 – שווי השימוש נקבע לפי טבלאות קבוצות מחיר ולא לפי מחירון.</div>`;
       out.innerHTML = h + '<div id="list"></div>';
       const list = $('list');
