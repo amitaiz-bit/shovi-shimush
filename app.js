@@ -31,6 +31,8 @@
   function footer(built) {
     const T = S.TAX;
     $('foot').innerHTML = `
+      <p><b>שני הערכים בכל תוצאה:</b> "מעודכן" – השווי שנזקף בפועל בתלוש השנה, לפי המחיר המתואם.
+      "כחדש" – אותו חישוב לפי מחיר המחירון המקורי, בלי הצמדה למדד (כפי שהיה נזקף לרכב חדש באותו מחיר היום).</p>
       <p><b>אופן החישוב (שנת מס ${T.year}):</b> ${(T.rate * 100).toFixed(2)}% מהמחיר המתואם – מחיר המחירון של הרכב כחדש,
       צמוד למדד מאז שנת הרישום – מעוגל ל-10 ₪, עד תקרה של ${fmt(T.cap)}. בניכוי הפחתה חודשית: היברידי ${fmt(T.reduction.h)},
       פלאג-אין ${fmt(T.reduction.p)}, חשמלי ${fmt(T.reduction.e)}.</p>
@@ -106,17 +108,21 @@
         ${engine ? `<span>${engine}</span>` : ''}
         ${rec.hp ? `<span>${rec.hp} כ״ס</span>` : ''}
         ${rec.b ? `<span>${esc(rec.b)}</span>` : ''}
-        ${rec.imp ? `<span>יבואן: ${esc(rec.imp)}</span>` : ''}
+        ${rec.imp ? `<span>${rec.off ? '<b style="color:var(--good)">יבואן רשמי</b>' : 'יבואן מקביל'}: ${esc(rec.imp)}</span>` : ''}
         <span><select class="prop" aria-label="סוג הנעה">${opts}</select></span>
         ${extra || ''}
       </div>
       <div class="val">
-        <div class="lbl">שווי שימוש חודשי</div>
+        <div class="lbl">שווי שימוש חודשי – מעודכן ל-${S.TAX.year}</div>
         <div class="num"></div>
-        <div class="price">מחירון ${fmt(rec.p)}${rec.adj && rec.adj !== rec.p ? ` · מתואם ${fmt(rec.adj)}` : ''}${Math.max(rec.p, rec.adj || 0) > S.TAX.cap ? ' (מעל התקרה)' : ''}</div>
+        <div class="price">מחיר מתואם ${fmt(rec.adj || rec.p)}${(rec.adj || rec.p) > S.TAX.cap ? ' (מעל התקרה)' : ''}</div>
+        <div class="asnew" style="font-size:.82rem;white-space:nowrap;margin-top:2px">כחדש: <b class="num2"></b> <span style="color:var(--muted)">(מחירון ${fmt(rec.p)}, בלי הצמדה)</span></div>
       </div>`;
-    const numEl = d.querySelector('.num'), sel = d.querySelector('select');
-    const upd = () => { numEl.textContent = fmt(S.usageValue(rec.p, sel.value, rec)); };
+    const numEl = d.querySelector('.num'), num2El = d.querySelector('.num2'), sel = d.querySelector('select');
+    const upd = () => {
+      numEl.textContent = fmt(S.usageValue(rec.p, sel.value, rec));
+      num2El.textContent = fmt(S.usageValue(rec.p, sel.value));   // לפי מחיר המחירון המקורי
+    };
     sel.onchange = upd; upd();
     return d;
   }
@@ -146,7 +152,7 @@
       out.innerHTML = h + '<div id="list"></div>';
       const list = $('list');
       if (!rows.length) { list.innerHTML = '<div class="note warn">לא נמצא מחיר מחירון לקוד הדגם הזה. בדקו בסימולטור של רשות המסים.</div>'; return; }
-      const ordered = pick ? [pick, ...rows.filter(r => r !== pick)] : rows.sort((a, b) => Math.abs(a.y - yReg) - Math.abs(b.y - yReg));
+      const ordered = pick ? [pick, ...rows.filter(r => r !== pick)] : rows.sort((a, b) => Math.abs(a.y - yReg) - Math.abs(b.y - yReg) || (b.off - a.off));
       ordered.forEach((r, i) => {
         const rec = Object.assign({}, r, { t: r.t || car.ramat_gimur || '' });
         if (fuelProp && rec.pr === 'r' && !rec.u) rec.pr = fuelProp;
