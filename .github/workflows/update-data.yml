@@ -2,11 +2,20 @@ name: עדכון נתוני מחירון
 
 on:
   schedule:
-    - cron: '17 3 * * 0'   # כל יום ראשון ב-03:17 UTC
+    - cron: '17 3 * * 0'   # כל יום ראשון ב-03:17 UTC – רמות גימור ומחירון יבואנים
+  push:
+    branches: [main]
+    paths:
+      - 'data/taxes-official.csv'   # השרת בבית העלה קובץ חדש מרשות המסים
+      - 'scripts/build-data.mjs'
   workflow_dispatch:        # הרצה ידנית מלשונית Actions
 
 permissions:
   contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -24,5 +33,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           git add data/cars.json
-          git diff --cached --quiet || git commit -m "עדכון נתונים $(date -u +%F)"
+          if git diff --cached --quiet; then echo "no changes"; exit 0; fi
+          git commit -m "עדכון נתונים $(date -u +%F)"
+          git pull --rebase origin main
           git push
